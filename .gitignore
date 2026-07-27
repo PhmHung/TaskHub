@@ -1,0 +1,23 @@
+# Môi trường ảo (ở bất kỳ thư mục con nào)
+venv/
+env/
+
+# Cache của Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Biến môi trường
+.env
+
+# Dev tools
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# IDE & Editor
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
