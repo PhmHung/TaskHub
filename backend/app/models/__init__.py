@@ -1,3 +1,4 @@
+from .attachments import Attachment
 from .comments import Comment
 from .labels import Label
 from .memberships import Membership

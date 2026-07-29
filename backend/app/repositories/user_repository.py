@@ -30,3 +30,14 @@ class UserRepository:
         await self.db.commit()
         await self.db.refresh(user)
         return user
+
+    async def update(self, user: User, update_data: dict) -> User:
+        """Cập nhật thông tin của một user."""
+        for key, value in update_data.items():
+            # Chỉ cập nhật các trường được gửi lên và không phải là None
+            if value is not None:
+                setattr(user, key, value)
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
+        return user

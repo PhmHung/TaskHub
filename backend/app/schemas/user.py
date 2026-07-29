@@ -25,8 +25,8 @@ class LoginRequest(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: str | None = None
-    role: UserRole | None = None
-    is_active: bool | None = None
+    password: str | None = None
+    current_password: str | None = None
 
 
 class UserResponse(UserBase):
