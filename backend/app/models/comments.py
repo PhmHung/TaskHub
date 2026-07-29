@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, Text
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey
 
 from app.db.base import Base
-from app.models.users import User
-from app.models.tasks import Task
 
+if TYPE_CHECKING:
+    from .attachments import Attachment
+    from .tasks import Task
+    from .users import User
 
 class Comment(Base):
     __tablename__ = "comments"
@@ -29,4 +32,6 @@ class Comment(Base):
     # Relationships
     task: Mapped["Task"] = relationship(back_populates="comments")
     user: Mapped["User"] = relationship(back_populates="comments")
-    attachments: Mapped[list["Attachment"]] = relationship(back_populates="comment", cascade="all, delete-orphan")
+    attachments: Mapped[list["Attachment"]] = relationship(
+        back_populates="comment", cascade="all, delete-orphan"
+    )

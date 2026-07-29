@@ -2,7 +2,7 @@ from sqlalchemy import Enum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.enums.workspace import WorkspaceMemberRole
+from app.enums.workspace_role import WorkspaceRole
 
 
 class WorkspaceMember(Base):
@@ -10,7 +10,7 @@ class WorkspaceMember(Base):
 
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    role: Mapped[WorkspaceMemberRole] = mapped_column(Enum(WorkspaceMemberRole), default=WorkspaceMemberRole.VIEWER, nullable=False)
+    role: Mapped[WorkspaceRole] = mapped_column(Enum(WorkspaceRole), default=WorkspaceRole.VIEWER, nullable=False)
 
     # Relationships
     workspace: Mapped["Workspace"] = relationship(back_populates="members")

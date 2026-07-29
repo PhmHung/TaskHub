@@ -21,4 +21,11 @@ __pycache__/
 
 # Build artifacts
 dist/
-docs/
+docs/SPECIFICATION.md
+docs/AGENT.md
+docs/database.md
+docs/layer.md
+uv.lock
+.python-version
+alembic.ini
+.gitignore
