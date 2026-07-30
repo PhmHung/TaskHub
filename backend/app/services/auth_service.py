@@ -12,7 +12,7 @@ from app.core.security import (
     get_password_hash,
     verify_password,
 )
-from app.repositories.refresh_token_repository import RefreshTokenRepository
+from app.repositories.refresh_token_repository import refresh_token_repo
 from app.repositories.user_repository import UserRepository
 from app.schemas.token import TokenResponse
 from app.schemas.user import UserCreate, UserResponse
@@ -23,27 +23,23 @@ class AuthService:
         self,
         db: AsyncSession,
         user_repo: UserRepository | None = None,
-        refresh_token_repo: RefreshTokenRepository | None = None,
     ):
         self.db = db
-        self.user_repo = user_repo or UserRepository(db)
-        self.refresh_token_repo = refresh_token_repo or RefreshTokenRepository(db)
+        self.user_repo = user_repo or UserRepository()
 
     async def register(self, data: UserCreate) -> UserResponse:
-        existing = await self.user_repo.get_by_email(data.email)
+        existing = await self.user_repo.get_by_email(self.db, data.email)
         if existing:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already registered",
             )
-
         hashed_password = get_password_hash(data.password)
-
-        user = await self.user_repo.create(data, hashed_password)
+        user = await self.user_repo.create(self.db, data, hashed_password)
         return UserResponse.model_validate(user)
 
     async def login(self, email: str, password: str) -> TokenResponse:
-        user = await self.user_repo.get_by_email(email)
+        user = await self.user_repo.get_by_email(self.db, email)
         if not user or not verify_password(password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,7 +50,8 @@ class AuthService:
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=settings.refresh_token_expire_days
         )
-        await self.refresh_token_repo.create(
+        await refresh_token_repo.create(
+            self.db,
             user_id=user.id,
             token=refresh_token,
             expires_at=expires_at,
@@ -65,13 +62,13 @@ class AuthService:
         )
 
     async def logout(self, refresh_token: str) -> None:
-        stored_token = await self.refresh_token_repo.get_by_token(refresh_token)
+        stored_token = await refresh_token_repo.get_by_token(self.db, token=refresh_token)
         if not stored_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid refresh token",
             )
-        await self.refresh_token_repo.revoke(stored_token)
+        await refresh_token_repo.revoke(self.db, refresh_token=stored_token)
 
     async def refresh_token(self, token: str):
         """
@@ -93,7 +90,7 @@ class AuthService:
             )
 
         # 2. Kiểm tra token có trong DB và hợp lệ không
-        db_token = await self.refresh_token_repo.get_by_token(token)
+        db_token = await refresh_token_repo.get_by_token(self.db, token=token)
         if not db_token or db_token.is_revoked:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -101,7 +98,7 @@ class AuthService:
             )
         
         # 3. Lấy thông tin người dùng
-        user = await self.user_repo.get_by_id(int(user_id))
+        user = await self.user_repo.get_by_id(self.db, user_id=int(user_id))
         if not user or not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

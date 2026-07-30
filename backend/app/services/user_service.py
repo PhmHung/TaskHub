@@ -10,7 +10,7 @@ from app.schemas.user import UserUpdate
 class UserService:
     def __init__(self, db: AsyncSession, user_repo: UserRepository | None = None):
         self.db = db
-        self.user_repo = user_repo or UserRepository(db)
+        self.user_repo = user_repo or UserRepository() # Instantiate without db
 
     async def update_profile(self, user: User, update_data: UserUpdate) -> User:
         update_dict = update_data.model_dump(exclude_unset=True)
@@ -38,4 +38,4 @@ class UserService:
         if not update_dict:
             return user
 
-        return await self.user_repo.update(user=user, update_data=update_dict)
+        return await self.user_repo.update(self.db, user=user, update_data=update_dict)

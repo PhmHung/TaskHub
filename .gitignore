@@ -22,7 +22,6 @@ __pycache__/
 # Build artifacts
 dist/
 docs/SPECIFICATION.md
-docs/AGENT.md
 docs/database.md
 docs/layer.md
 uv.lock
