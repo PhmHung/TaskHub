@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.auth_service import AuthService
 from app.services.user_service import UserService
+from app.services.workspace_service import WorkspaceService
 from .dependency import get_db
 
 
@@ -14,3 +15,8 @@ def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:
 def get_user_service(db: AsyncSession = Depends(get_db)) -> UserService:
     """Dependency to get an instance of UserService."""
     return UserService(db)
+
+
+def get_workspace_service(db: AsyncSession = Depends(get_db)) -> WorkspaceService:
+    """Dependency to get an instance of WorkspaceService."""
+    return WorkspaceService(db)

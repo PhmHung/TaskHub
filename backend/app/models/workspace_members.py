@@ -10,7 +10,7 @@ class WorkspaceMember(Base):
 
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
-    role: Mapped[WorkspaceRole] = mapped_column(Enum(WorkspaceRole), default=WorkspaceRole.VIEWER, nullable=False)
+    role: Mapped[WorkspaceRole] = mapped_column(Enum(WorkspaceRole), default=WorkspaceRole.EDITOR, nullable=False)
 
     # Relationships
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
