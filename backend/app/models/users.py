@@ -30,8 +30,8 @@ class User(Base):
         foreign_keys="Task.assignee_id",
         back_populates="assignee",
     )
-    reported_tasks: Mapped[list["Task"]] = relationship(
-        "Task", foreign_keys="Task.reporter_id", back_populates="reporter"
+    created_tasks: Mapped[list["Task"]] = relationship(
+        "Task", foreign_keys="Task.creator_id", back_populates="creator"
     )
 
     # Relationships from other models

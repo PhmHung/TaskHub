@@ -1,25 +1,26 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
 
 from app.db.base import Base
-from app.enums.tasks import TaskPriority, TaskStatus
+from app.enums.task_priority import TaskPriority
+from app.enums.task_status import TaskStatus
+from .task_labels import task_labels
 
 if TYPE_CHECKING:
-    from .comments import Comment
-    from .labels import Label
-    from .projects import Project
-    from .users import User
+    from .comments import Comment  # noqa
+    from .labels import Label  # noqa
+    from .projects import Project  # noqa
+    from .users import User  # noqa
 
 
 class Task(Base):
     __tablename__ = "tasks"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus), nullable=False, default=TaskStatus.TODO
@@ -27,26 +28,27 @@ class Task(Base):
     priority: Mapped[TaskPriority] = mapped_column(
         Enum(TaskPriority), nullable=False, default=TaskPriority.MEDIUM
     )
-    due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
-    assignee_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
-    reporter_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
-
-    assignee: Mapped["User | None"] = relationship(
-        "User", foreign_keys=[assignee_id], back_populates="assigned_tasks"
-    )
-    reporter: Mapped["User"] = relationship(
-        "User", foreign_keys=[reporter_id], back_populates="reported_tasks"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     project: Mapped["Project"] = relationship(back_populates="tasks")
-    labels: Mapped[list["Label"]] = relationship(
-        secondary="task_labels", back_populates="tasks"
+    assignee: Mapped["User | None"] = relationship(
+        "User", foreign_keys=[assignee_id], back_populates="assigned_tasks"
     )
-    comments: Mapped[list["Comment"]] = relationship(
-        back_populates="task", cascade="all, delete-orphan"
+    creator: Mapped["User"] = relationship(
+        "User", foreign_keys=[creator_id], back_populates="created_tasks"
+    )
+    comments: Mapped[List["Comment"]] = relationship(
+        "Comment", back_populates="task", cascade="all, delete-orphan"
+    )
+    labels: Mapped[List["Label"]] = relationship(
+        "Label", secondary=task_labels, back_populates="tasks"
     )
