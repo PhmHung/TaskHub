@@ -2,18 +2,24 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.dependency import get_current_user, get_db
+from app.api.dependencies.common import get_pagination_params
 from app.api.dependencies.permissions import (
     require_project_permission,
     require_workspace_editor_role,
     require_workspace_viewer_role,
 )
 from app.api.dependencies.resources import get_project_by_id
+from app.api.dependencies.services import get_project_service, get_task_service
 from app.core import exceptions
 from app.enums.workspace_role import WorkspaceRole
 from app.models import Project, User
 from app.repositories.project_repository import project_repo
 from app.repositories.workspace_repository import workspace_repo
 from app.schemas import project as project_schema
+from app.schemas.common import IPaginatedResponse
+from app.schemas.task import TaskCreate, TaskResponse
+from app.services.project_service import ProjectService
+from app.services.task_service import TaskService
 
 router = APIRouter()
 
@@ -26,14 +32,14 @@ router = APIRouter()
 async def create_project(
     workspace_id: int,
     project_in: project_schema.ProjectCreate,
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_workspace_editor_role),
+    service: ProjectService = Depends(get_project_service),
 ):
     """
     Create a new project within a workspace. User must be an owner or editor.
     """
-    project = await project_repo.create_with_owner_and_workspace(
-        db, obj_in=project_in, owner_id=current_user.id, workspace_id=workspace_id
+    project = await service.create_project(
+        project_in=project_in, owner=current_user, workspace_id=workspace_id
     )
     return project
 
@@ -106,6 +112,7 @@ async def delete_project(
     project: Project = Depends(get_project_by_id),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    service: ProjectService = Depends(get_project_service),
 ):
     """
     Delete a project. Only project owner or workspace owner can delete.
@@ -114,6 +121,7 @@ async def delete_project(
     if project.owner_id == current_user.id:
         await project_repo.remove(db, id=project.id)
         return
+    await service.delete_project(project=project, user=current_user)
 
     # 2. If not, check if the user is a workspace OWNER
     workspace = await workspace_repo.get(db, id=project.workspace_id)
@@ -129,3 +137,45 @@ async def delete_project(
     raise exceptions.http_403_exc(
         "Only project owner or workspace owner can delete this project."
     )
+
+
+# --- Task Endpoints ---
+
+
+@router.post(
+    "/projects/{project_id}/tasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Task",
+)
+async def create_task_for_project(
+    project_id: int,
+    task_in: TaskCreate,
+    service: TaskService = Depends(get_task_service),
+    # The user must be at least a member of the project's workspace to create a task.
+    current_user: User = Depends(require_project_permission),
+):
+    """
+    Create a new task within a specific project.
+    """
+    return await service.create_task(
+        task_in=task_in, project_id=project_id, creator=current_user
+    )
+
+
+@router.get(
+    "/projects/{project_id}/tasks",
+    response_model=IPaginatedResponse[TaskResponse],
+    summary="List Project Tasks",
+)
+async def list_tasks_for_project(
+    project_id: int,
+    pagination: dict = Depends(get_pagination_params),
+    service: TaskService = Depends(get_task_service),
+    # The user must be at least a member of the project's workspace to view tasks.
+    _: User = Depends(require_project_permission),
+):
+    """
+    Retrieve tasks for a specific project with pagination.
+    """
+    return await service.get_tasks_by_project(project_id=project_id, **pagination)
