@@ -38,10 +38,10 @@ async def create_project(
     """
     Create a new project within a workspace. User must be an owner or editor.
     """
-    project = await service.create_project(
+    # Delegate the creation and duplicate name check to the service layer
+    return await service.create_project(
         project_in=project_in, owner=current_user, workspace_id=workspace_id
     )
-    return project
 
 
 @router.get(
@@ -111,32 +111,13 @@ async def unarchive_project(
 async def delete_project(
     project: Project = Depends(get_project_by_id),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
     service: ProjectService = Depends(get_project_service),
 ):
     """
     Delete a project. Only project owner or workspace owner can delete.
     """
-    # 1. Check if the current user is the project owner
-    if project.owner_id == current_user.id:
-        await project_repo.remove(db, id=project.id)
-        return
+    # Delegate all logic, including authorization, to the service layer.
     await service.delete_project(project=project, user=current_user)
-
-    # 2. If not, check if the user is a workspace OWNER
-    workspace = await workspace_repo.get(db, id=project.workspace_id)
-    if not workspace:
-        raise exceptions.http_404_exc("Workspace not found for this project.")
-
-    member = await workspace_repo.get_member(db, workspace_id=workspace.id, user_id=current_user.id)
-    if (workspace.owner_id == current_user.id) or (member and member.role == WorkspaceRole.OWNER):
-        await project_repo.remove(db, id=project.id)
-        return
-
-    # 3. If none of the above, deny access
-    raise exceptions.http_403_exc(
-        "Only project owner or workspace owner can delete this project."
-    )
 
 
 # --- Task Endpoints ---

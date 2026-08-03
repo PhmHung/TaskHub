@@ -35,12 +35,31 @@ class WorkspaceRepository:
         result = await db.execute(statement)
         return result.unique().scalar_one_or_none()
 
+    async def get_by_name(self, db: AsyncSession, *, name: str) -> Workspace | None:
+        """Get a workspace by its name."""
+        statement = select(Workspace).where(Workspace.name == name)
+        result = await db.execute(statement)
+        return result.unique().scalar_one_or_none()
+
     async def create_with_owner(
         self, db: AsyncSession, *, obj_in: WorkspaceCreate, owner_id: int
     ) -> Workspace:
-        """Create a new workspace with an owner."""
+        """
+        Create a new workspace and automatically add the creator as a member with the
+        OWNER role.
+        """
         db_obj = Workspace(**obj_in.model_dump(), owner_id=owner_id)
         db.add(db_obj)
+        # Flush the session to assign an ID to db_obj without committing the transaction.
+        # This is necessary so we can use db_obj.id for the WorkspaceMember.
+        await db.flush()
+
+        # Create a WorkspaceMember entry for the owner.
+        owner_member = WorkspaceMember(
+            workspace_id=db_obj.id, user_id=owner_id, role=WorkspaceRole.OWNER
+        )
+        db.add(owner_member)
+
         await db.commit()
         await db.refresh(db_obj)
         return db_obj
@@ -72,8 +91,20 @@ class WorkspaceRepository:
         member = WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role=role)
         db.add(member)
         await db.commit()
-        await db.refresh(member)
-        return member
+
+        # After committing, the original 'member' object is expired.
+        # We re-fetch the member from the database using a unique key
+        # (workspace_id, user_id) and eagerly load the 'user' relationship
+        # to prevent lazy-loading issues during response serialization.
+        result = await db.execute(
+            select(WorkspaceMember)
+            .where(
+                WorkspaceMember.workspace_id == workspace.id,
+                WorkspaceMember.user_id == user.id,
+            )
+            .options(joinedload(WorkspaceMember.user))
+        )
+        return result.unique().scalar_one()
 
     async def get_member(
         self, db: AsyncSession, *, workspace_id: int, user_id: int

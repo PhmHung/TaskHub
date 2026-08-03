@@ -16,6 +16,12 @@ class ProjectRepository:
         result = await db.execute(statement)
         return result.scalar_one_or_none()
 
+    async def get_by_name(self, db: AsyncSession, *, name: str, workspace_id: int) -> Project | None:
+        """Get a project by its name within a specific workspace."""
+        statement = select(Project).where(Project.name == name, Project.workspace_id == workspace_id)
+        result = await db.execute(statement)
+        return result.scalar_one_or_none()
+
     async def create_with_owner_and_workspace(
         self, db: AsyncSession, *, obj_in: ProjectCreate, owner_id: int, workspace_id: int
     ) -> Project:

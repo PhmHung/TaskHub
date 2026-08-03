@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Security, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.dependency import get_current_user, get_db
@@ -27,20 +27,16 @@ router = APIRouter()
 async def create_workspace(
     workspace_in: workspace_schema.WorkspaceCreate,
     db: AsyncSession = Depends(get_db),
-    # current_user: User = Depends(get_current_user), # Temporarily disabled for debugging
+    current_user: User = Security(get_current_user),
+    service: WorkspaceService = Depends(get_workspace_service),
 ):
-    """
-    Create a new workspace. The creator becomes the owner.
-    """
-    owner_id_for_debugging = 1
-    logger.info(f"DEBUGGING: Creating a new workspace '{workspace_in.name}' for owner ID {owner_id_for_debugging}")
-    workspace = await workspace_repo.create_with_owner(
-        db, obj_in=workspace_in, owner_id=owner_id_for_debugging
+    print(">>> ENTER create_workspace")
+    logger.info("Current user: %s", current_user.email)
+
+    workspace = await service.create_workspace(
+        workspace_in=workspace_in, owner_id=current_user.id
     )
-    return await workspace_repo.get_by_id_with_details(
-    db,
-    workspace_id=workspace.id,
-)
+    return workspace
 
 
 @router.get("/{workspace_id}", response_model=workspace_schema.WorkspaceResponse)
@@ -77,14 +73,13 @@ async def update_workspace(
 async def delete_workspace(
     workspace: Workspace = Depends(get_workspace_by_id),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: WorkspaceService = Depends(get_workspace_service),
 ):
     """
     Delete a workspace. Only the workspace owner can delete it.
     """
-    if workspace.owner_id != current_user.id:
-        raise exceptions.http_403_exc("Only the workspace owner can delete the workspace.")
-    await workspace_repo.remove(db, id=workspace.id)
+    # Delegate authorization and deletion to the service layer for consistency.
+    await service.delete_workspace(workspace=workspace, user=current_user)
 
 
 @router.post(
@@ -93,14 +88,14 @@ async def delete_workspace(
 async def invite_member(
     invitation: workspace_schema.WorkspaceMemberInvite,
     workspace: Workspace = Depends(get_workspace_by_id),
-    current_user: User = Depends(require_workspace_owner_role),
+    current_user: User = Depends(get_current_user),
     service: WorkspaceService = Depends(get_workspace_service),
 ):
     """
     Invite a user to the workspace. Only users with the OWNER role can invite.
     """
     return await service.invite_member(
-        workspace=workspace, invitation=invitation, current_user=current_user
+        workspace=workspace, invitation=invitation, inviter=current_user
     )
 
 
