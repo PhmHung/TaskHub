@@ -37,6 +37,8 @@ def http_400_exc(detail: str = "Bad request."):
     """
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
+def http_409_exc(detail: str = "Conflict"):
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 class ConfigurationError(Exception):
     """Custom exception for application configuration errors."""

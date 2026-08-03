@@ -1,18 +1,26 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.enums.task_priority import TaskPriority
 from app.enums.task_status import TaskStatus
 
 
 class TaskBase(BaseModel):
-    name: str
+    title: str
     description: str | None = None
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: datetime | None = None
     assignee_id: int | None = None
+
+    @field_validator("assignee_id")
+    @classmethod
+    def validate_assignee_id(cls, v: int | None) -> int | None:
+        """Treat 0 as None (unassigned) for assignee_id."""
+        if v == 0:
+            return None
+        return v
 
 
 class TaskCreate(TaskBase):
@@ -20,7 +28,7 @@ class TaskCreate(TaskBase):
 
 
 class TaskUpdate(BaseModel):
-    name: str | None = None
+    title: str | None = None
     description: str | None = None
     status: TaskStatus | None = None
     priority: TaskPriority | None = None

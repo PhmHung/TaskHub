@@ -25,6 +25,7 @@ class UserRepository:
             full_name=data.full_name,
             hashed_password=hashed_password,
             role=UserRole.MEMBER,
+            created_at=datetime.now(timezone.utc),
         )
         db.add(user)
         await db.commit()
