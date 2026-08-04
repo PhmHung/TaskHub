@@ -1,5 +1,6 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.tasks import Task
 from app.schemas.task import TaskCreate, TaskUpdate
@@ -7,9 +8,12 @@ from app.schemas.task import TaskCreate, TaskUpdate
 
 class TaskRepository:
     async def get(self, db: AsyncSession, *, id: int) -> Task | None:
-        statement = select(Task).where(Task.id == id)
+        statement = select(Task).where(Task.id == id).options(
+            joinedload(Task.project),  # Eagerly load the project relationship
+            joinedload(Task.labels),   # Eagerly load the labels relationship
+        )
         result = await db.execute(statement)
-        return result.scalar_one_or_none()
+        return result.unique().scalar_one_or_none()
 
     async def create(
         self, db: AsyncSession, *, obj_in: TaskCreate, project_id: int, creator_id: int
