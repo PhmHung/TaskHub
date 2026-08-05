@@ -120,12 +120,12 @@ http://127.0.0.1:8000/redoc
 
 ---
 
-# Chạy với Docker Compose (Development Mode)
+# Chạy với Docker Compose
 
 ## 1. Tạo file môi trường
 
 ```bash
-cp .env.example .env
+cp .env.example .env.docker
 ```
 
 ---
@@ -133,7 +133,7 @@ cp .env.example .env
 ## 2. Khởi động
 
 ```bash
-docker compose up --build
+docker compose --env-file .env.docker up -d --build
 ```
 
 Docker sẽ tự động:

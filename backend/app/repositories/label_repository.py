@@ -16,6 +16,14 @@ class LabelRepository:
         result = await db.execute(statement)
         return result.scalar_one_or_none()
 
+    async def get_by_name_and_project(
+        self, db: AsyncSession, *, name: str, project_id: int
+    ) -> Label | None:
+        """Get a label by its name within a specific project."""
+        statement = select(Label).where(Label.name == name, Label.project_id == project_id)
+        result = await db.execute(statement)
+        return result.scalar_one_or_none()
+
     async def create(
         self, db: AsyncSession, *, obj_in: LabelCreate, project_id: int
     ) -> Label:

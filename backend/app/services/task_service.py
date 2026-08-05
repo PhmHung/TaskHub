@@ -1,19 +1,32 @@
+import json
+
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import exceptions
+from app.enums import TaskPriority, TaskStatus
 from app.models import Label, Task, User
 from app.repositories.comment_repository import comment_repo
 from app.repositories.task_repository import TaskRepository
+from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import workspace_repo
 from app.schemas.common import IPaginatedResponse
 from app.schemas.comment import CommentCreate, CommentResponse
-from app.schemas.task import TaskCreate, TaskResponse
+from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 
 class TaskService:
-    def __init__(self, db: AsyncSession, task_repo: TaskRepository | None = None):
+    def __init__(
+        self,
+        db: AsyncSession,
+        task_repo: TaskRepository | None = None,
+        redis_client: Redis | None = None,
+        user_repo: UserRepository | None = None,
+    ):
         self.db = db
         self.task_repo = task_repo or TaskRepository()
+        self.redis_client = redis_client
+        self.user_repo = user_repo or UserRepository()
 
     async def create_task(
         self, *, task_in: TaskCreate, project_id: int, creator: User
@@ -21,20 +34,63 @@ class TaskService:
         task = await self.task_repo.create(
             self.db, obj_in=task_in, project_id=project_id, creator_id=creator.id
         )
+        await self._invalidate_project_tasks_cache(project_id=project_id)
         return TaskResponse.model_validate(task)
 
     async def get_tasks_by_project(
-        self, *, project_id: int, page: int, size: int
+        self,
+        *,
+        project_id: int,
+        page: int,
+        size: int,
+        status: TaskStatus | None = None,
+        priority: TaskPriority | None = None,
+        assignee_id: int | None = None,
     ) -> IPaginatedResponse[TaskResponse]:
+        # Caching logic
+        if self.redis_client:
+            cache_key = (
+                f"tasks:project:{project_id}:page:{page}:size:{size}"
+                f":status:{status}:priority:{priority}:assignee:{assignee_id}"
+            )
+            cached_data = await self.redis_client.get(cache_key)
+            if cached_data:
+                return IPaginatedResponse[TaskResponse].model_validate_json(cached_data)
+
+        # If not cached, fetch from DB
         tasks, total = await self.task_repo.get_multi_by_project(
-            self.db, project_id=project_id, page=page, size=size
+            self.db,
+            project_id=project_id,
+            page=page,
+            size=size,
+            status=status,
+            priority=priority,
+            assignee_id=assignee_id,
         )
-        return IPaginatedResponse(
+        response = IPaginatedResponse(
             total=total,
             page=page,
             size=size,
             results=[TaskResponse.model_validate(task) for task in tasks],
         )
+
+        # Store in cache
+        if self.redis_client:
+            await self.redis_client.set(
+                cache_key, response.model_dump_json(), ex=3600  # Cache for 1 hour
+            )
+
+        return response
+
+    async def _invalidate_project_tasks_cache(self, project_id: int):
+        """Invalidates all task list caches for a given project."""
+        if not self.redis_client:
+            return
+
+        # SCAN is preferred over KEYS in production to avoid blocking.
+        # This will delete all cache entries for the project's task lists.
+        async for key in self.redis_client.scan_iter(f"tasks:project:{project_id}:*"):
+            await self.redis_client.delete(key)
 
     async def _check_is_workspace_member(self, user: User, task: Task):
         """
@@ -67,6 +123,38 @@ class TaskService:
                 "User does not have permission to access this task."
             )
 
+    async def update_task(
+        self, *, task: Task, task_in: TaskUpdate, user: User
+    ) -> TaskResponse:
+        """Updates a task after verifying permissions."""
+        await self._check_is_workspace_member(user=user, task=task)
+
+        # Validate assignee_id if provided and not None
+        # We check if assignee_id is explicitly provided in the update payload.
+        if task_in.assignee_id is not None:
+            if task_in.assignee_id == 0:
+                raise exceptions.http_400_exc("Assignee ID cannot be 0.")
+            
+            assignee = await self.user_repo.get_by_id(self.db, user_id=task_in.assignee_id)
+            if not assignee:
+                raise exceptions.http_404_exc(f"Assignee with ID {task_in.assignee_id} not found.")
+
+        updated_task = await self.task_repo.update(self.db, db_obj=task, obj_in=task_in)
+
+        await self._invalidate_project_tasks_cache(project_id=updated_task.project_id)
+
+        return TaskResponse.model_validate(updated_task)
+
+    async def delete_task(self, *, task: Task, user: User) -> None:
+        """Deletes a task after verifying permissions."""
+        await self._check_is_workspace_member(user=user, task=task)
+        project_id = task.project_id
+
+        await self.task_repo.delete(self.db, db_obj=task)
+
+        # Invalidate cache
+        await self._invalidate_project_tasks_cache(project_id=project_id)
+
     async def assign_label_to_task(
         self, *, task: Task, label: Label, user: User
     ) -> TaskResponse:
@@ -90,6 +178,8 @@ class TaskService:
         self.db.add(task)
         await self.db.commit()
         await self.db.refresh(task)
+
+        await self._invalidate_project_tasks_cache(project_id=task.project_id)
 
         return TaskResponse.model_validate(task)
 
