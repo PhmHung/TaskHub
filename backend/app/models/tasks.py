@@ -1,12 +1,12 @@
 from datetime import datetime
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.enums.task_priority import TaskPriority
-from app.enums.task_status import TaskStatus
+from app.enums import TaskPriority, TaskStatus
+
 from .task_labels import task_labels
 
 if TYPE_CHECKING:
@@ -45,9 +45,9 @@ class Task(Base):
     creator: Mapped["User"] = relationship(
         "User", foreign_keys=[creator_id], back_populates="created_tasks"
     )
-    comments: Mapped[List["Comment"]] = relationship(
+    comments: Mapped[list["Comment"]] = relationship(
         "Comment", back_populates="task", cascade="all, delete-orphan"
     )
-    labels: Mapped[List["Label"]] = relationship(
+    labels: Mapped[list["Label"]] = relationship(
         "Label", secondary=task_labels, back_populates="tasks"
     )

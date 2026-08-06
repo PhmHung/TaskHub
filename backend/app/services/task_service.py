@@ -1,17 +1,18 @@
-import json
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import exceptions
+from app.core.logger import logger
 from app.enums import TaskPriority, TaskStatus
-from app.models import Label, Task, User
+from app.models import Comment, Label, Task, User
 from app.repositories.comment_repository import comment_repo
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import workspace_repo
-from app.schemas.common import IPaginatedResponse
 from app.schemas.comment import CommentCreate, CommentResponse
+from app.schemas.common import IPaginatedResponse
 from app.schemas.task import TaskCreate, TaskResponse, TaskUpdate
 
 
@@ -47,13 +48,16 @@ class TaskService:
         priority: TaskPriority | None = None,
         assignee_id: int | None = None,
     ) -> IPaginatedResponse[TaskResponse]:
-        # Caching logic
-        if self.redis_client:
-            cache_key = (
-                f"tasks:project:{project_id}:page:{page}:size:{size}"
-                f":status:{status}:priority:{priority}:assignee:{assignee_id}"
-            )
-            cached_data = await self.redis_client.get(cache_key)
+        cache_key = await self._build_cache_key(
+            project_id=project_id,
+            page=page,
+            size=size,
+            status=status,
+            priority=priority,
+            assignee_id=assignee_id,
+        )
+        if cache_key:
+            cached_data = await self._cache_get(cache_key)
             if cached_data:
                 return IPaginatedResponse[TaskResponse].model_validate_json(cached_data)
 
@@ -75,22 +79,68 @@ class TaskService:
         )
 
         # Store in cache
-        if self.redis_client:
-            await self.redis_client.set(
-                cache_key, response.model_dump_json(), ex=3600  # Cache for 1 hour
-            )
+        if cache_key:
+            await self._cache_set(cache_key, response.model_dump_json())
 
         return response
 
-    async def _invalidate_project_tasks_cache(self, project_id: int):
-        """Invalidates all task list caches for a given project."""
+    async def _cache_get(self, key: str) -> str | None:
+        """Reads from cache. Returns None on Redis failure (fail-open)."""
+        if not self.redis_client:
+            return None
+        try:
+            value = await self.redis_client.get(key)
+        except RedisError as exc:
+            logger.warning("Redis cache read failed, falling back to DB: %s", exc)
+            return None
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return value
+
+    async def _cache_set(self, key: str, value: str) -> None:
+        """Writes to cache. Silently skips on Redis failure (fail-open)."""
         if not self.redis_client:
             return
+        try:
+            await self.redis_client.set(key, value, ex=3600)  # Cache for 1 hour
+        except RedisError as exc:
+            logger.warning("Redis cache write failed, skipping: %s", exc)
 
-        # SCAN is preferred over KEYS in production to avoid blocking.
-        # This will delete all cache entries for the project's task lists.
-        async for key in self.redis_client.scan_iter(f"tasks:project:{project_id}:*"):
-            await self.redis_client.delete(key)
+    async def _build_cache_key(
+        self,
+        *,
+        project_id: int,
+        page: int,
+        size: int,
+        status: TaskStatus | None,
+        priority: TaskPriority | None,
+        assignee_id: int | None,
+    ) -> str | None:
+        """Builds a versioned cache key. Returns None when caching is unavailable."""
+        if not self.redis_client:
+            return None
+        try:
+            version = await self.redis_client.get(
+                f"tasks:project:{project_id}:version"
+            )
+        except RedisError as exc:
+            logger.warning("Redis unavailable, skipping cache: %s", exc)
+            return None
+        if isinstance(version, bytes):
+            version = version.decode("utf-8")
+        return (
+            f"tasks:project:{project_id}:v{version or 0}:page:{page}:size:{size}"
+            f":status:{status}:priority:{priority}:assignee:{assignee_id}"
+        )
+
+    async def _invalidate_project_tasks_cache(self, project_id: int) -> None:
+        """Bumps the project's cache generation counter to invalidate all entries."""
+        if not self.redis_client:
+            return
+        try:
+            await self.redis_client.incr(f"tasks:project:{project_id}:version")
+        except RedisError as exc:
+            logger.warning("Redis cache invalidation failed: %s", exc)
 
     async def _check_is_workspace_member(self, user: User, task: Task):
         """
@@ -183,6 +233,27 @@ class TaskService:
 
         return TaskResponse.model_validate(task)
 
+    async def remove_label_from_task(
+        self, *, task: Task, label: Label, user: User
+    ) -> TaskResponse:
+        """Removes a label from a task after verifying permissions and business rules."""
+        await self._check_is_workspace_member(user=user, task=task)
+
+        if task.project_id != label.project_id:
+            raise exceptions.http_400_exc(
+                "Task and Label do not belong to the same project."
+            )
+
+        if label in task.labels:
+            task.labels.remove(label)
+            self.db.add(task)
+            await self.db.commit()
+            await self.db.refresh(task)
+
+        await self._invalidate_project_tasks_cache(project_id=task.project_id)
+
+        return TaskResponse.model_validate(task)
+
     async def add_comment_to_task(
         self, *, task: Task, comment_in: CommentCreate, user: User
     ) -> CommentResponse:
@@ -196,3 +267,20 @@ class TaskService:
         )
 
         return CommentResponse.model_validate(comment)
+
+    async def delete_comment(
+        self, *, task: Task, comment: Comment, user: User
+    ) -> None:
+        """Deletes a comment on a task after verifying permissions."""
+        await self._check_is_workspace_member(user=user, task=task)
+
+        if comment.task_id != task.id:
+            raise exceptions.http_400_exc(
+                "Comment does not belong to the specified task."
+            )
+        if comment.user_id != user.id:
+            raise exceptions.http_403_exc(
+                "You can only delete your own comments."
+            )
+
+        await comment_repo.delete(self.db, comment=comment)
