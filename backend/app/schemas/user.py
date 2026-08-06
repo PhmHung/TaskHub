@@ -29,6 +29,11 @@ class UserUpdate(BaseModel):
     current_password: str | None = None
 
 
+class ChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
 class UserResponse(UserBase):
     id: int
     created_at: datetime

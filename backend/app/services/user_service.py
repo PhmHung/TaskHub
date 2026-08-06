@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_password_hash, verify_password
 from app.models.users import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserUpdate
+from app.schemas.user import ChangePassword, UserUpdate
 
 
 class UserService:
@@ -39,3 +39,15 @@ class UserService:
             return user
 
         return await self.user_repo.update(self.db, user=user, update_data=update_dict)
+
+    async def change_password(self, user: User, data: ChangePassword) -> None:
+        if not verify_password(data.current_password, user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Incorrect current password.",
+            )
+        await self.user_repo.update(
+            self.db,
+            user=user,
+            update_data={"hashed_password": get_password_hash(data.new_password)},
+        )

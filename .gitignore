@@ -28,3 +28,4 @@ uv.lock
 .python-version
 alembic.ini
 .gitignore
+.env.docker

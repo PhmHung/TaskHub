@@ -2,11 +2,13 @@ from fastapi import Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import exceptions
-from app.models import Label, Project, Task, Workspace
+from app.models import Comment, Label, Project, Task, Workspace
+from app.repositories.comment_repository import comment_repo
 from app.repositories.label_repository import label_repo
 from app.repositories.project_repository import project_repo
 from app.repositories.task_repository import task_repo
 from app.repositories.workspace_repository import workspace_repo
+
 from .dependency import get_db
 
 
@@ -61,3 +63,16 @@ async def get_label_by_id(
     if not label:
         raise exceptions.http_404_exc("Label not found")
     return label
+
+
+async def get_comment_by_id(
+    comment_id: int = Path(), db: AsyncSession = Depends(get_db)
+) -> Comment:
+    """
+    Dependency to get a comment by its ID from the path.
+    Raises 404 if not found.
+    """
+    comment = await comment_repo.get_by_id(db, comment_id=comment_id)
+    if not comment:
+        raise exceptions.http_404_exc("Comment not found")
+    return comment

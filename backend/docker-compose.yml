@@ -14,8 +14,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    env_file:
-      - .env
+
+  redis:
+    image: redis:7-alpine
+    container_name: taskhub_redis
+    ports:
+      - "${REDIS_HOST_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api:
     build:
@@ -25,8 +34,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file:
-      - .env
+      - .env.docker
     ports:
       - "${APP_PORT}:8000"
     volumes:

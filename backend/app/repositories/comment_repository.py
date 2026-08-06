@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Comment
@@ -18,6 +19,16 @@ class CommentRepository:
         await db.commit()
         await db.refresh(db_obj)
         return db_obj
+
+    async def get_by_id(self, db: AsyncSession, *, comment_id: int) -> Comment | None:
+        """Get a comment by its id."""
+        result = await db.execute(select(Comment).where(Comment.id == comment_id))
+        return result.scalar_one_or_none()
+
+    async def delete(self, db: AsyncSession, *, comment: Comment) -> None:
+        """Delete a comment."""
+        await db.delete(comment)
+        await db.commit()
 
 
 comment_repo = CommentRepository()

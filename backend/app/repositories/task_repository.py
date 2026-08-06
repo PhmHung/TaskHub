@@ -2,6 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.enums import TaskPriority, TaskStatus
 from app.models.tasks import Task
 from app.schemas.task import TaskCreate, TaskUpdate
 
@@ -25,20 +26,38 @@ class TaskRepository:
         return db_obj
 
     async def get_multi_by_project(
-        self, db: AsyncSession, *, project_id: int, page: int = 1, size: int = 20
+        self,
+        db: AsyncSession,
+        *,
+        project_id: int,
+        page: int = 1,
+        size: int = 20,
+        status: TaskStatus | None = None,
+        priority: TaskPriority | None = None,
+        assignee_id: int | None = None,
     ) -> tuple[list[Task], int]:
-        """Get tasks for a project with pagination."""
+        """Get tasks for a project with pagination and filtering."""
         offset = (page - 1) * size
 
-        items_query = (
-            select(Task).where(Task.project_id == project_id).offset(offset).limit(size)
-        )
-        total_query = select(func.count()).select_from(Task).where(Task.project_id == project_id)
+        # Base query for both items and total count
+        base_query = select(Task).where(Task.project_id == project_id)
 
+        # Apply filters
+        if status:
+            base_query = base_query.where(Task.status == status)
+        if priority:
+            base_query = base_query.where(Task.priority == priority)
+        if assignee_id is not None:
+            base_query = base_query.where(Task.assignee_id == assignee_id)
+
+        # Query for paginated items
+        items_query = base_query.order_by(Task.created_at.desc()).offset(offset).limit(size)
         items_result = await db.execute(items_query)
-        total_result = await db.execute(total_query)
-
         items = list(items_result.scalars().all())
+
+        # Query for total count with the same filters
+        total_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await db.execute(total_query)
         total = total_result.scalar_one()
 
         return items, total
@@ -54,6 +73,11 @@ class TaskRepository:
         db.add(db_obj)
         await db.commit()
         await db.refresh(db_obj)
+        return db_obj
+
+    async def delete(self, db: AsyncSession, *, db_obj: Task) -> Task:
+        await db.delete(db_obj)
+        await db.commit()
         return db_obj
 
 

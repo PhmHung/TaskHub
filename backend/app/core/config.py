@@ -6,6 +6,7 @@ from app.core.exceptions import ConfigurationError
 class Settings(BaseSettings):
     app_port: int = 8000
     database_url: str
+    redis_url: str
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
